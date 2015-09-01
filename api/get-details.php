@@ -36,7 +36,7 @@ if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
                 $time_flag = true;
             
             $info = 'The day on '.$date_display . ($time_flag ? " is " : " was ") . $day;
-            array_push($response_array, $info);
+            // array_push($response_array, $info);
         }
         $response_array = getVizgrEvents($date_string_format, $response_array);
         $response_array = getMovieDBEvents($date_string_format_2, $response_array, $time_flag);
@@ -44,14 +44,10 @@ if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
 
     if($success){
         $json = array(
-            'success'   => $success,
-            'date'      => array(
-                'day'       => $date,
-                'day_str'   => $day,
-                'month'     => $month,
-                'month_str' => $MONTHS[$month],
-                'year'      => $year
-            ),
+            'success'       => $success,
+            'day_of_week'   => $day,
+            'month_string'  => $MONTHS[$month],
+            'time'          => (bool)$time_flag,              
             'events'    => $response_array
         );
     } else {
@@ -68,7 +64,7 @@ if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
 
     echo json_encode($json);
 } else {
-    header('Location: http://prabhakargupta.com');
+    echo "Please Provide Parameters";
 }
 
 // function to get the day of week using Zeller's algorithm
