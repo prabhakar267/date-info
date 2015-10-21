@@ -4,6 +4,11 @@ date_default_timezone_set("Asia/Kolkata");
 require 'inc/func.inc.php';
 require 'inc/globals.inc.php';
 
+$response = array(
+    'status_code'   => 400,
+    'success'       => false
+);
+
 if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
 
     $date = intval($_GET['day']);
@@ -43,29 +48,19 @@ if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
     }
 
     if($success){
-        $json = array(
-            'success'       => $success,
-            'day_of_week'   => $day,
-            'month_string'  => $MONTHS[$month],
-            'time'          => (bool)$time_flag,              
-            'events'    => $response_array
-        );
+        $response['day_of_week']    = $day;
+        $response['month_string']   = $MONTHS[$month];
+        $response['time']           = (bool)$time_flag;
+        $response['events']         = $response_array;
     } else {
-        $json = array(
-            'success'   => $success,
-            'message'   => "Invalid Date",
-            'date'      => array(
-                'day'       => $date,
-                'month'     => $month,
-                'year'      => $year
-            )
-        );
+        $response['message'] = 'Invalid Date provided';
     }
-
-    echo json_encode($json);
 } else {
-    echo "Please Provide Parameters";
+    $response['message'] = 'Please Provide Parameters';
 }
+
+echo json_encode($response);
+
 
 // function to get the day of week using Zeller's algorithm
 function getDay($day, $month, $year){
