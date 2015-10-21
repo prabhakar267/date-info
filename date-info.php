@@ -18,10 +18,8 @@ if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
     $response_array = array();
 
     if(checkdate($month, $date, $year) != 1){
-        $success = false;
+        $response['message'] = 'Invalid Date provided';
     } else {
-        $success = true;
-
         $date_string = $year . '-' . $month . '-' . $date;
         $date_string_format = date('Ymd', strtotime($date_string));
         $date_string_format_2 = date('Y-m-d', strtotime($date_string));
@@ -45,16 +43,15 @@ if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
         }
         $response_array = getVizgrEvents($date_string_format, $response_array);
         $response_array = getMovieDBEvents($date_string_format_2, $response_array, $time_flag);
-    }
 
-    if($success){
+        $response['success']        = true;
         $response['day_of_week']    = $day;
         $response['month_string']   = $MONTHS[$month];
         $response['time']           = (bool)$time_flag;
         $response['events']         = $response_array;
-    } else {
-        $response['message'] = 'Invalid Date provided';
+
     }
+
 } else {
     $response['message'] = 'Please provide correct parameters';
 }
