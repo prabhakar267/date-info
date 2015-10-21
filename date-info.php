@@ -56,7 +56,7 @@ if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
         $response['message'] = 'Invalid Date provided';
     }
 } else {
-    $response['message'] = 'Please Provide Parameters';
+    $response['message'] = 'Please provide correct parameters';
 }
 
 echo json_encode($response);
