@@ -26,12 +26,12 @@ Response
 
 ## Successful response
 
-![successful response](/screenshots/screencapture-localhost-date-info-date-info-php-1445448164530.png) 
+![successful response](/.github/screenshots/screencapture-localhost-date-info-date-info-php-1445448164530.png) 
 
 * * * *
 
 ## Unsuccessful response
 
-![unsuccessful response](/screenshots/screencapture-localhost-date-info-date-info-php-1445447730540.png) 
+![unsuccessful response](/.github/screenshots/screencapture-localhost-date-info-date-info-php-1445447730540.png) 
 
 * * * *
