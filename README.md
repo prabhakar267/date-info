@@ -1,10 +1,10 @@
 # Date Info
 
-This is a simple API which let's the user fetch the events in JSON format which happened or would happen on a specific date. API takes 3 parameters as date in date, month and year format.
+This is a simple API which let's the user fetch the events in JSON format which happened or would happen on a specific date. API takes 3 parameters as day in date, month and year format.
 
 | Parameter | Value |
 |---|---|
-| date | date of month in DD or D format |
+| day | day of month in DD or D format |
 | month | month in MM or M format |
 | year | year in YYYY format |
 
