@@ -14,7 +14,6 @@ Response
 
 | Key | Meaning | Possible Values |
 |---|---|---|
-| status_code | It gives the status of the data recieved by the user. If the data is correctly provided, then status code is **200** else it is **400** along with the **message**  | 200 , 400 |
 | success | It basically helps in checking whether the data is recieved or not, as of now this can be ignored since one can check the same  using the **status code** | true , false |
 | message | If the **success** flag is **false**, this parameter gives the reason why the data is not recieved | string |
 | day_of_week | If the **success** flag is **true**, then **day_of_week** gives the day of week on the date provided in input as a string | Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday |

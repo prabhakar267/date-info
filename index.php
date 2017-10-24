@@ -21,13 +21,11 @@ require 'inc/globals.inc.php';
 
 
 $response = array(
-    'status_code'   => 400,
-    'success'       => false
+    'success'       => false,
 );
 
 
 if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
-
     $date = intval($_GET['day']);
     $month = intval($_GET['month']);
     $year = intval($_GET['year']);
@@ -56,12 +54,11 @@ if (isset($_GET['day']) && isset($_GET['month']) && isset($_GET['year'])){
                 $time_flag = true;
             
             $info = 'The day on '.$date_display . ($time_flag ? " is " : " was ") . $day;
-            // array_push($response_array, $info);
         }
+
         $response_array = getVizgrEvents($date_string_format, $response_array);
         $response_array = getMovieDBEvents($date_string_format_2, $response_array, $time_flag);
 
-        $response['status_code']    = 200;
         $response['success']        = true;
         $response['day_of_week']    = $day;
         $response['month_string']   = $MONTHS[$month];
