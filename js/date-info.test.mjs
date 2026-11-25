@@ -4,19 +4,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  checkdate, getDateInfo, getDay, languageName, parsePhpJson, parsePhpQuery, parseXml,
+  checkdate, getDateInfo, getDay, languageName, parsePhpJson, parsePhpQuery,
   phpFloatToString, phpIntval, phpJsonEncode, phpTrim, strtotimeYnj,
 } from './date-info.js';
 
 // 2026-11-25 21:40 UTC is 2026-11-26 03:10 in Asia/Kolkata.
 const NOW = new Date('2026-11-25T21:40:00Z');
 
-const VIZGR_XML = `<?xml version="1.0" encoding="UTF-8"?>
-<result>
-  <count>2</count>
-  <event><date>2015/10/21</date><description>  Kept &amp; trimmed {{cite web}} tail</description></event>
-  <event><description><![CDATA[Before <ref>after]]></description></event>
-</result>`;
+// Wikipedia "On this day" shape. Only events from the requested year are kept.
+const WIKI_JSON = JSON.stringify({
+  events: [
+    { text: '  First 2026 event \n', year: 2026, pages: [] },
+    { text: 'From another year', year: 1888, pages: [] },
+    { text: 'Second 2026 event', year: 2026, pages: [] },
+  ],
+});
 
 const TMDB_JSON = JSON.stringify({
   results: [
@@ -25,14 +27,16 @@ const TMDB_JSON = JSON.stringify({
   ],
 });
 
-// A fake fetch that records URLs and answers vizgr and TMDB.
-function fakeFetch({ vizgr = VIZGR_XML, tmdb = TMDB_JSON, status = 200 } = {}) {
+// A fake fetch that records URLs and answers Wikipedia and TMDB. A null body
+// is a network error.
+function fakeFetch({ wiki = WIKI_JSON, tmdb = TMDB_JSON, status = 200, wikiStatus = status } = {}) {
   const urls = [];
   const fetch = async (url) => {
     urls.push(url);
-    const body = url.includes('/historical-events/') ? vizgr : tmdb;
+    const isWiki = url.includes('/onthisday/');
+    const body = isWiki ? wiki : tmdb;
     if (body === null) throw new TypeError('network down');
-    return new Response(body, { status });
+    return new Response(body, { status: isWiki ? wikiStatus : status });
   };
   return { fetch, urls };
 }
@@ -41,8 +45,9 @@ const info = (query, fetchOptions) => getDateInfo(new URLSearchParams(query), { 
 const ok = (day, month, time, events) => phpJsonEncode({ success: true, day_of_week: day, month_string: month, time, events });
 const BAD_PARAMS = '{"success":false,"message":"Please provide correct parameters"}';
 const BAD_DATE = '{"success":false,"message":"Invalid Date provided"}';
-const PAST = ['Kept & trimmed', 'Before', 'Amélie / Ø 😀 released (French movie)', 'Mystery released ( movie)'];
-const FUTURE = ['Kept & trimmed', 'Before', 'Amélie / Ø 😀 releases (French movie)', 'Mystery releases ( movie)'];
+const WIKI_2026 = ['First 2026 event', 'Second 2026 event'];
+const PAST = ['Amélie / Ø 😀 released (French movie)', 'Mystery released ( movie)'];
+const FUTURE = ['Amélie / Ø 😀 releases (French movie)', 'Mystery releases ( movie)'];
 
 test('phpIntval follows PHP 8 numeric-string rules', () => {
   const cases = {
@@ -142,16 +147,6 @@ test('parsePhpJson rejects what PHP json_decode rejects', () => {
   assert.deepEqual([...parsePhpJson('{"b":1,"1":2,"b":3}').value.keys()], ['b', '1']);
 });
 
-test('parseXml rejects documents libxml rejects', () => {
-  assert.equal(parseXml(''), null);
-  assert.equal(parseXml('<a><b></a>'), null);
-  assert.equal(parseXml('<a>&nbsp;</a>'), null);
-  assert.equal(parseXml('<a>x</a><b/>'), null);
-  assert.equal(parseXml(' <?xml version="1.0"?><a/>'), null);
-  assert.equal(parseXml(new Uint8Array([0x3C, 0x61, 0x3E, 0xFF, 0x3C, 0x2F, 0x61, 0x3E])), null);
-  assert.deepEqual(parseXml('<a>x&#x41;\r\n<!--c--><b/>y</a>'), { name: 'a', children: ['xA\n', { name: 'b', children: [] }, 'y'] });
-});
-
 test('missing or invalid parameters', async () => {
   assert.equal(await info(''), BAD_PARAMS);
   assert.equal(await info('day=1&month=1'), BAD_PARAMS);
@@ -165,19 +160,19 @@ test('missing or invalid parameters', async () => {
 
 test('today, yesterday and tomorrow are judged in Asia/Kolkata', async () => {
   assert.equal(await info('day=26&month=11&year=2026'), '{"success":true,"day_of_week":"Thursday","month_string":"November",'
-    + '"time":true,"events":["Today is Thursday (26-November-2026)","Kept & trimmed","Before",'
+    + '"time":true,"events":["Today is Thursday (26-November-2026)","First 2026 event","Second 2026 event",'
     + '"Am\\u00e9lie \\/ \\u00d8 \\ud83d\\ude00 releases (French movie)","Mystery releases ( movie)"]}');
   assert.equal(await info('day=26&month=11&year=2026'),
-    ok('Thursday', 'November', true, ['Today is Thursday (26-November-2026)', ...FUTURE]));
-  assert.equal(await info('day=25&month=11&year=2026'), ok('Wednesday', 'November', false, PAST));
-  assert.equal(await info('day=27&month=11&year=2026'), ok('Friday', 'November', true, FUTURE));
+    ok('Thursday', 'November', true, ['Today is Thursday (26-November-2026)', ...WIKI_2026, ...FUTURE]));
+  assert.equal(await info('day=25&month=11&year=2026'), ok('Wednesday', 'November', false, [...WIKI_2026, ...PAST]));
+  assert.equal(await info('day=27&month=11&year=2026'), ok('Friday', 'November', true, [...WIKI_2026, ...FUTURE]));
 });
 
 test('upstream URLs', async () => {
   const { fetch, urls } = fakeFetch();
-  await getDateInfo({ day: '5', month: '6', year: '999' }, { now: NOW, fetch, vizgrBase: 'http://v', tmdbBase: 'http://t' });
+  await getDateInfo({ day: '5', month: '6', year: '999' }, { now: NOW, fetch, wikiBase: 'https://w', tmdbBase: 'http://t' });
   assert.deepEqual(urls, [
-    'http://v/historical-events/search.php?begin_date=09990605&end_date=09990605&lang=en',
+    'https://w/feed/v1/wikipedia/en/onthisday/events/06/05',
     'http://t/3/discover/movie?api_key=9ffaf75d2da4fc5ee98c6f4e866207bd&primary_release_date.gte=0999-06-05&primary_release_date.lte=0999-06-05&sort_by=popularity.desc',
   ]);
 });
@@ -195,17 +190,89 @@ test('edge years and numeric strings', async () => {
 
 test('upstream failures add no events', async () => {
   const none = ok('Wednesday', 'October', false, []);
-  assert.equal(await info('day=21&month=10&year=2015', { vizgr: null, tmdb: null }), none);
+  assert.equal(await info('day=21&month=10&year=2015', { wiki: null, tmdb: null }), none);
   assert.equal(await info('day=21&month=10&year=2015', { status: 404 }), none);
-  assert.equal(await info('day=21&month=10&year=2015', { vizgr: '<result><count>0</count><event/></result>', tmdb: '{}' }), none);
-  assert.equal(await info('day=21&month=10&year=2015', { vizgr: '<result><count>1</count><event/>', tmdb: '{"results":[{"title":"\\udc00"}]}' }), none);
+  assert.equal(await info('day=21&month=10&year=2015', { tmdb: '{}' }), none);
+  assert.equal(await info('day=21&month=10&year=2015', { tmdb: '{"results":[{"title":"\\udc00"}]}' }), none);
 });
 
 test('TMDB value types convert like PHP', async () => {
   const tmdb = '{"results":{"b":{"title":12345678901234567890,"original_language":"en"},"1":{"title":true},"c":"x"}}';
-  assert.equal(await info('day=21&month=10&year=2015', { vizgr: null, tmdb }),
+  assert.equal(await info('day=21&month=10&year=2015', { wiki: null, tmdb }),
     ok('Wednesday', 'October', false, ['1.2345678901235E+19 released (English movie)', '1 released ( movie)', ' released ( movie)']));
   // PHP 8 stops with an uncaught Error and, with error_reporting(0), echoes nothing.
-  assert.equal(await info('day=21&month=10&year=2015', { vizgr: null, tmdb: '{"results":[{"title":{}}]}' }), '');
-  assert.equal(await info('day=21&month=10&year=2015', { vizgr: null, tmdb: '{"results":[{"original_language":[]}]}' }), '');
+  assert.equal(await info('day=21&month=10&year=2015', { wiki: null, tmdb: '{"results":[{"title":{}}]}' }), '');
+  assert.equal(await info('day=21&month=10&year=2015', { wiki: null, tmdb: '{"results":[{"original_language":[]}]}' }), '');
+});
+
+// ---------------------------------------------------------------------------
+// Wikipedia "On this day" events
+// ---------------------------------------------------------------------------
+
+const wikiBody = (events) => JSON.stringify({ events });
+const MOVIES_1989 = PAST; // TMDB_JSON lines for a past date
+const NOV_9_1989 = 'day=9&month=11&year=1989';
+
+test('Wikipedia events are filtered to the exact year, in feed order', async () => {
+  const wiki = wikiBody([
+    { text: 'A', year: 1989, pages: [] },
+    { text: 'Other', year: 1990, pages: [] },
+    { text: 'B', year: 1989, pages: [] },
+    { text: 'Old', year: -500, pages: [] },
+    { text: 'C', year: 1989, pages: [] },
+    { text: 'String year', year: '1989', pages: [] },
+  ]);
+  assert.equal(await info(NOV_9_1989, { wiki }), ok('Thursday', 'November', false, ['A', 'B', 'C', ...MOVIES_1989]));
+  assert.equal(await info('day=9&month=11&year=1990', { wiki }), ok('Friday', 'November', false, ['Other', ...MOVIES_1989]));
+  assert.equal(await info('day=9&month=11&year=1991', { wiki }), ok('Saturday', 'November', false, MOVIES_1989));
+});
+
+test('Wikipedia text is trimmed and json_encode-escaped like the rest', async () => {
+  const wiki = wikiBody([{ text: ' \tAC/DC said "hi" in Zürich 😀 \n', year: 1989 }, { text: '\ud800 lone', year: 1989 }]);
+  const body = await info(NOV_9_1989, { wiki, tmdb: '{}' });
+  assert.equal(body, '{"success":true,"day_of_week":"Thursday","month_string":"November","time":false,'
+    + '"events":["AC\\/DC said \\"hi\\" in Z\\u00fcrich \\ud83d\\ude00"]}');
+});
+
+test('Wikipedia URL pads day and month, and uses the strtotime date', async () => {
+  const urlFor = async (query) => {
+    const { fetch, urls } = fakeFetch();
+    await getDateInfo(new URLSearchParams(query), { now: NOW, fetch });
+    return urls[0];
+  };
+  const base = 'https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/events/';
+  assert.equal(await urlFor('day=5&month=6&year=2015'), `${base}06/05`);
+  assert.equal(await urlFor('day=31&month=12&year=2015'), `${base}12/31`);
+  assert.equal(await urlFor('day=29&month=2&year=2016'), `${base}02/29`);
+  assert.equal(await urlFor('day=29&month=2&year=10012'), `${base}03/01`); // strtotime rolls to 2002-03-01
+});
+
+test('Feb 29 keeps events from that leap year only', async () => {
+  const wiki = wikiBody([{ text: 'Leap 2016', year: 2016 }, { text: 'Leap 2012', year: 2012 }]);
+  assert.equal(await info('day=29&month=2&year=2016', { wiki, tmdb: '{}' }), ok('Monday', 'February', false, ['Leap 2016']));
+});
+
+test('5-digit years use the year strtotime gives', async () => {
+  const wiki = wikiBody([{ text: 'In 2007', year: 2007 }, { text: 'In 32767', year: 32767 }]);
+  assert.equal(await info('day=31&month=12&year=32767', { wiki, tmdb: '{}' }), ok('Sunday', 'December', false, ['In 2007']));
+});
+
+test('Wikipedia failures add no events and keep the rest', async () => {
+  const movies = ok('Thursday', 'November', false, MOVIES_1989);
+  const good = wikiBody([{ text: 'A', year: 1989 }]);
+  assert.equal(await info(NOV_9_1989, { wiki: good, wikiStatus: 500 }), movies);
+  assert.equal(await info(NOV_9_1989, { wiki: good, wikiStatus: 404 }), movies);
+  assert.equal(await info(NOV_9_1989, { wiki: '{"events": [ {"text": "broken"' }), movies);
+  assert.equal(await info(NOV_9_1989, { wiki: '' }), movies);
+  assert.equal(await info(NOV_9_1989, { wiki: '{}' }), movies);
+  assert.equal(await info(NOV_9_1989, { wiki: '{"events":null}' }), movies);
+  assert.equal(await info(NOV_9_1989, { wiki: 'null' }), movies);
+  assert.equal(await info(NOV_9_1989, { wiki: '{"events":[null,{"year":1989},{"text":7,"year":1989}]}' }), movies);
+  assert.equal(await info(NOV_9_1989, { wiki: null }), movies);
+});
+
+test('Wikipedia events sit after "Today is" and before the TMDB lines', async () => {
+  const wiki = wikiBody([{ text: 'Today in 2026', year: 2026 }]);
+  assert.equal(await info('day=26&month=11&year=2026', { wiki }),
+    ok('Thursday', 'November', true, ['Today is Thursday (26-November-2026)', 'Today in 2026', ...FUTURE]));
 });
