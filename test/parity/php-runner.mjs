@@ -96,9 +96,9 @@ export async function startPhp({ vizgrBase = null, tmdbBase = null } = {}) {
     dir,
     port,
     request: (rawQuery, timeoutMs = 120000) => get(port, rawQuery, timeoutMs),
-    stop() {
-      if (exited) return Promise.resolve();
-      return new Promise((resolve) => { proc.on('exit', resolve); proc.kill(); });
+    async stop() {
+      if (!exited) await new Promise((resolve) => { proc.on('exit', resolve); proc.kill(); });
+      fs.rmSync(dir, { recursive: true, force: true });
     },
   };
 }
