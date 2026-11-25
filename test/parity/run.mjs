@@ -4,8 +4,9 @@
 //   node test/parity/run.mjs              grid against the mock upstreams
 //   node test/parity/run.mjs --self-test  PHP vs PHP, then PHP vs PHP with one
 //                                         byte changed (must catch exactly one)
-//   node test/parity/run.mjs --live       a few dates against the real upstreams
 //
+// The PHP asks vizgr for historical events, the port asks Wikipedia. Both mocks
+// give no events for the grid's dates, so the bodies must still be identical.
 // PARITY_IMPL=<file> tests another module exporting getDateInfo instead.
 // Exit code: 0 all match, 1 mismatches, 2 harness error.
 
@@ -127,10 +128,19 @@ function buildGrid(nowMs) {
 }
 
 // Upstream requests as path + sorted params, so order of params and of the
-// two calls does not matter but their content does.
+// two calls does not matter but their content does. A vizgr request (PHP) and
+// a Wikipedia request (JS) both become "events MM/DD", so the two sides must
+// ask for events on the same day and month.
 function normaliseLog(log) {
   return log.map((u) => {
     const url = new URL(u, 'http://x');
+    if (url.pathname === '/vizgr/historical-events/search.php') {
+      const date = url.searchParams.get('begin_date') ?? '';
+      return `events ${date.slice(4, 6)}/${date.slice(6, 8)}`;
+    }
+    if (url.pathname.startsWith('/wiki/feed/v1/wikipedia/en/onthisday/events/')) {
+      return `events ${url.pathname.split('/').slice(-2).join('/')}`;
+    }
     const params = [...url.searchParams].sort((a, b) => (a[0] + a[1] < b[0] + b[1] ? -1 : 1));
     return `${url.pathname}?${params.map(([k, v]) => `${k}=${v}`).join('&')}`;
   }).sort();
@@ -210,19 +220,9 @@ async function stopAll() { while (servers.length) await servers.pop().stop(); }
 async function main() {
   const args = new Set(process.argv.slice(2));
 
-  if (args.has('--live')) {
-    const php = await start(() => startPhp());
-    const getDateInfo = await loadPort();
-    const [d, m, y] = istDate(Date.now());
-    const grid = [['live today IST', q(d, m, y)], ['live 2015-01-01', q(1, 1, 2015)], ['live 2019-04-26', q(26, 4, 2019)]];
-    const mismatches = await runGrid(grid, php, jsImpl(getDateInfo, {}), null);
-    printMismatches('live (real vizgr + TMDB)', mismatches, grid.length);
-    return mismatches.length;
-  }
-
   const mock = await start(startMock);
-  const bases = { vizgrBase: mock.vizgrBase, tmdbBase: mock.tmdbBase };
-  const php = await start(() => startPhp(bases));
+  const php = await start(() => startPhp({ vizgrBase: mock.vizgrBase, tmdbBase: mock.tmdbBase }));
+  const jsBases = { wikiBase: mock.wikiBase, tmdbBase: mock.tmdbBase };
   const grid = buildGrid(Date.now());
 
   if (args.has('--self-test')) {
@@ -245,18 +245,19 @@ async function main() {
   }
 
   const getDateInfo = await loadPort();
-  const mismatches = await runGrid(grid, php, jsImpl(getDateInfo, bases), mock);
+  const mismatches = await runGrid(grid, php, jsImpl(getDateInfo, jsBases), mock);
   printMismatches('grid (mock upstreams)', mismatches, grid.length);
 
-  // vizgr connection refused: point both sides at a port nothing listens on.
+  // Events source refused: point PHP's vizgr and the port's Wikipedia at a
+  // port nothing listens on.
   await php.stop();
   servers.splice(servers.indexOf(php), 1);
   const refused = `http://127.0.0.1:${await freePort()}`;
   const php2 = await start(() => startPhp({ vizgrBase: refused, tmdbBase: mock.tmdbBase }));
   const [d, m, y] = istDate(Date.now());
-  const refusedGrid = [['vizgr refused 2015-01-01', q(1, 1, 2015)], ['vizgr refused today IST', q(d, m, y)]];
-  const refusedMismatches = await runGrid(refusedGrid, php2, jsImpl(getDateInfo, { ...bases, vizgrBase: refused }), mock);
-  printMismatches('vizgr connection refused', refusedMismatches, refusedGrid.length);
+  const refusedGrid = [['events refused 2015-01-01', q(1, 1, 2015)], ['events refused today IST', q(d, m, y)]];
+  const refusedMismatches = await runGrid(refusedGrid, php2, jsImpl(getDateInfo, { ...jsBases, wikiBase: refused }), mock);
+  printMismatches('events source connection refused', refusedMismatches, refusedGrid.length);
 
   return mismatches.length + refusedMismatches.length;
 }

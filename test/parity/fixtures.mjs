@@ -1,9 +1,12 @@
 // Canned upstream data for the mock server.
 //
-// vizgr fixtures are keyed by begin_date (YYYYMMDD), TMDB fixtures by
-// primary_release_date.gte (YYYY-MM-DD). A date with no fixture gets the
-// default reply, which echoes the requested date so a wrongly formatted date
-// on either side shows up as a body mismatch.
+// The PHP side still asks vizgr for events and the JS side asks Wikipedia, so
+// the two are compared like for like: vizgr always answers with no events, and
+// every Wikipedia reply yields no events for the grid's dates (a failure, or
+// events from year 0 or earlier, which the port filters out). Wikipedia
+// fixtures are keyed by MM/DD, TMDB fixtures by primary_release_date.gte
+// (YYYY-MM-DD). A date with no fixture gets the default reply, which echoes
+// the requested date so a wrongly formatted date shows up as a mismatch.
 //
 // Each fixture is { status, contentType, body } or a special { behavior }:
 //   'reset' - drop the connection without a response
@@ -13,22 +16,6 @@
 export const STALL_MS = 2000;
 export const SLOW_MS = 1000;
 
-const NBSP = '\u00a0';
-
-// Build a vizgr-style XML document. `count` is the raw <count> text (null
-// leaves the element out). Each description is raw XML (already escaped);
-// null leaves <description> out of that event.
-function vizgrXml(count, descriptions, encoding = 'UTF-8') {
-  let xml = `<?xml version="1.0" encoding="${encoding}"?>\n<result>\n`;
-  if (count !== null) xml += `<count>${count}</count>\n`;
-  for (const d of descriptions) {
-    xml += '<event>\n<date>2015/01/01</date>\n';
-    if (d !== null) xml += `<description>${d}</description>\n`;
-    xml += '<lang>en</lang>\n<category1>Events</category1>\n<granularity>year</granularity>\n</event>\n';
-  }
-  return xml + '</result>\n';
-}
-
 const xml = (body, status = 200) => ({ status, contentType: 'text/xml; charset=UTF-8', body });
 const json = (value, status = 200) => ({
   status,
@@ -36,51 +23,32 @@ const json = (value, status = 200) => ({
   body: typeof value === 'string' ? value : JSON.stringify(value),
 });
 
-export const vizgr = {
-  // several plain events
-  '20150101': xml(vizgrXml(3, [
-    'The euro becomes the currency of Lithuania.',
-    'Mobile phone network launched {{cite news|title=x}} trailing',
-    'A third event &lt;ref&gt;source&lt;/ref&gt; after ref',
-  ])),
-  // count=0 but an event is still listed: PHP must skip it
-  '20150102': xml(vizgrXml(0, ['Listed but count is zero'])),
-  // the awkward description shapes
-  '20150103': xml(vizgrXml(13, [
-    '{{starts with a brace}} so nothing is left',
-    'Brace in the middle { rest',
-    '&lt;ref&gt; starts with an escaped less-than',
-    'Less-than in the middle &lt; rest {after}',
-    '<![CDATA[CDATA text & more <b>bold</b> {x}]]>',
-    'Entities: Tom &amp; Jerry, caf&#233;, &#x263A;, &quot;quoted&quot; &apos;apos&apos; &gt;',
-    '\t\n  tabs and newlines around \n\t',
-    `${NBSP}literal non-breaking spaces${NBSP}`,
-    '&#160;entity non-breaking spaces&#160;',
-    '\r\n  CRLF around \r\n', // a vertical tab would make the XML invalid
-    '',
-    null,
-    'Mixed <i>child element</i> content',
-  ])),
-  // HTTP 500 with a valid XML body: PHP treats it as a failed load
-  '20150104': xml(vizgrXml(1, ['Should not appear: HTTP 500']), 500),
-  // malformed XML
-  '20150105': xml('<?xml version="1.0"?><result><count>1</count><event><description>broken</description></result>'),
+// What PHP's vizgr call sees for every date: a valid reply with no events.
+export const vizgrNoEvents = xml('<?xml version="1.0" encoding="UTF-8"?>\n<result>\n<count>0</count>\n</result>\n');
+
+// Events from years no grid date maps to (strtotime always gives year >= 1).
+const otherYears = (mmdd) => [
+  { text: `Year 0 event for ${mmdd}`, year: 0, pages: [] },
+  { text: `BC event for ${mmdd}`, year: -44, pages: [] },
+];
+
+export const wiki = {
+  // events present but in the wrong shape
+  '01/03': json({ events: null }),
+  // HTTP 500 with an event for 2015: the port must ignore the body
+  '01/04': json({ events: [{ text: 'Should not appear: HTTP 500', year: 2015, pages: [] }] }, 500),
+  // malformed JSON
+  '01/05': json('{"events": [ {"text": "broken"'),
   // connection dropped without a response
-  '20150106': { behavior: 'reset' },
+  '01/06': { behavior: 'reset' },
   // nothing sent, connection dropped after STALL_MS
-  '20150107': { behavior: 'stall' },
-  // ISO-8859-1 document with a raw 0xE9 byte
-  '20150108': {
-    status: 200,
-    contentType: 'text/xml',
-    body: Buffer.from(vizgrXml(1, ['Latin-1 caf\u00e9 and na\u00efve'], 'ISO-8859-1'), 'latin1'),
-  },
-  // <count> missing but events present
-  '20150109': xml(vizgrXml(null, ['No count element'])),
+  '01/07': { behavior: 'stall' },
+  // year as a string is not the year
+  '01/08': json({ events: [{ text: 'String year', year: '2015', pages: [] }] }),
+  // no events key
+  '01/09': json({}),
   // slow but valid reply
-  '20150110': { behavior: 'slow', ...xml(vizgrXml(1, ['Slow reply'])) },
-  // future date used with the "releases" wording
-  '20300615': xml(vizgrXml(2, ['Future event one', 'Future event two'])),
+  '01/10': { behavior: 'slow', ...json({ events: otherYears('01/10') }) },
 };
 
 export const tmdb = {
@@ -118,8 +86,8 @@ export const tmdb = {
   }),
 };
 
-export function defaultVizgr(date) {
-  return xml(vizgrXml(1, [`Default vizgr event for ${date}`]));
+export function defaultWiki(mmdd) {
+  return json({ events: otherYears(mmdd) });
 }
 
 export function defaultTmdb(date) {
@@ -128,5 +96,6 @@ export function defaultTmdb(date) {
 
 // Day/month/year triples that hit each fixture, for the query grid.
 export const fixtureDates = [
-  ...Object.keys(vizgr).map((k) => [Number(k.slice(6, 8)), Number(k.slice(4, 6)), Number(k.slice(0, 4))]),
+  [1, 1, 2015], [2, 1, 2015], [3, 1, 2015], [4, 1, 2015], [5, 1, 2015], [6, 1, 2015],
+  [7, 1, 2015], [8, 1, 2015], [9, 1, 2015], [10, 1, 2015], [15, 6, 2030],
 ];

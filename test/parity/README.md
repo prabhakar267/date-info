@@ -1,5 +1,12 @@
 # PHP vs JS parity harness
 
+The PHP asks vizgr for historical events and the port asks Wikipedia's On
+this day feed. The mock gives PHP a vizgr reply with no events for every date,
+and gives the port Wikipedia replies that yield no events for the grid's dates
+(failures, or events from year 0 and BC, which the port's year filter drops).
+Everything else is compared byte for byte, and both sides must ask for events
+on the same day and month.
+
 Checks that `js/date-info.js` returns exactly the bytes the original PHP API
 echoes, for the same query, the same upstream data and the same moment.
 
@@ -18,7 +25,6 @@ Other modes:
 | Command | What it does |
 |---|---|
 | `node test/parity/run.mjs --self-test` | PHP vs PHP (must be 0 mismatches), then PHP vs PHP with one byte flipped in one case (must be exactly 1 mismatch). Proves the harness compares and catches a one-byte difference. Does not need the JS port. |
-| `node test/parity/run.mjs --live` | Three dates (today in IST, 2015-01-01, 2019-04-26) against the real upstreams from both sides. vizgr is down, so both sides wait out its timeout (about 60 s per PHP request) and return no vizgr events. Takes about 3.5 minutes. TMDB results can change between the two calls, so a rare live mismatch may be upstream drift. |
 | `PARITY_IMPL=<file> node test/parity/run.mjs` | Test another module that exports `getDateInfo` instead of `js/date-info.js`. |
 
 Needs Node 24 and PHP 8 (`arch -arm64 brew install php`; the runner uses

@@ -1,6 +1,7 @@
-// Dependency-free mock of the two upstreams, bound to 127.0.0.1.
+// Dependency-free mock of the upstreams, bound to 127.0.0.1.
 //
-//   /vizgr/historical-events/search.php?begin_date=YYYYMMDD&...  -> XML
+//   /vizgr/historical-events/search.php?begin_date=YYYYMMDD&...  -> XML, no events (PHP)
+//   /wiki/feed/v1/wikipedia/en/onthisday/events/MM/DD            -> JSON (JS)
 //   /tmdb/3/discover/movie?primary_release_date.gte=YYYY-MM-DD&... -> JSON
 //
 // Every request is appended to `log` so the runner can check that both
@@ -8,6 +9,8 @@
 
 import http from 'node:http';
 import * as fixtures from './fixtures.mjs';
+
+const WIKI_PATH = '/wiki/feed/v1/wikipedia/en/onthisday/events/';
 
 export async function startMock() {
   const log = [];
@@ -24,8 +27,10 @@ export async function startMock() {
     const url = new URL(req.url, 'http://127.0.0.1');
     let fixture;
     if (url.pathname === '/vizgr/historical-events/search.php') {
-      const date = url.searchParams.get('begin_date') ?? '';
-      fixture = fixtures.vizgr[date] ?? fixtures.defaultVizgr(date);
+      fixture = fixtures.vizgrNoEvents;
+    } else if (url.pathname.startsWith(WIKI_PATH)) {
+      const mmdd = url.pathname.slice(WIKI_PATH.length);
+      fixture = fixtures.wiki[mmdd] ?? fixtures.defaultWiki(mmdd);
     } else if (url.pathname === '/tmdb/3/discover/movie') {
       const date = url.searchParams.get('primary_release_date.gte') ?? '';
       fixture = fixtures.tmdb[date] ?? fixtures.defaultTmdb(date);
@@ -51,6 +56,7 @@ export async function startMock() {
   return {
     port,
     vizgrBase: `http://127.0.0.1:${port}/vizgr`,
+    wikiBase: `http://127.0.0.1:${port}/wiki`,
     tmdbBase: `http://127.0.0.1:${port}/tmdb`,
     log,
     async stop() {
