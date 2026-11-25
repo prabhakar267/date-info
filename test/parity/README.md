@@ -49,7 +49,7 @@ Needs Node 24 and PHP 8 (`arch -arm64 brew install php`; the runner uses
   parameters compared, ignoring parameter order and call order).
 - All servers are stopped and the temp dir is removed when the run ends.
 
-## What the grid covers (148 cases with the mock, plus 2 with vizgr refused)
+## What the grid covers (172 cases with the mock, plus 2 with vizgr refused)
 
 - Missing `day`, `month` or `year`, no parameters, unrelated parameters.
 - Empty values, and `day` with no `=`.
@@ -59,8 +59,11 @@ Needs Node 24 and PHP 8 (`arch -arm64 brew install php`; the runner uses
   month 0 and 13; 4 and 15 Oct 1582; 31 Dec 1969; 19 Jan 2038.
 - Jan 1 and Dec 31 of years 0, 1, 50, 69, 70, 99, 100, 999, 1000, 1582,
   1900, 1970, 9999, 10000, 32767, 32768, and other 5-digit years (10600,
-  20000, 24000, 25000, 10012-02-29, 23599, 32000, 29999), which strtotime
-  reads in unusual ways.
+  20000, 24000, 25000, 10012-02-29, 23599, 32000, 29999, 12345, 10599, 19999,
+  24599, 24600, 30000, 32765, 29 Feb of 10016, 10020, 25012 and 32764), which
+  strtotime reads in unusual ways.
+- 1-3 digit years (4, 9, 10, 68, 96, 400, 123), and yesterday, today and
+  tomorrow in IST written as a 2-digit year (strtotime reads them as 20xx).
 - For each of `day`, `month` and `year`: `" 5"`, `"5abc"`, `"+5"` (encoded
   and raw `+`), `"-5"`, `"1e1"`, `"1.9"`, `"0x1A"`, `"05"`, leading tab,
   trailing space, a 20-digit number, `"abc"`; plus year forms such as
