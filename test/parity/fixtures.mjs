@@ -56,7 +56,7 @@ export const vizgr = {
     '\t\n  tabs and newlines around \n\t',
     `${NBSP}literal non-breaking spaces${NBSP}`,
     '&#160;entity non-breaking spaces&#160;',
-    '\r\n\u000b vertical tab and CRLF \u000b\r\n',
+    '\r\n  CRLF around \r\n', // a vertical tab would make the XML invalid
     '',
     null,
     'Mixed <i>child element</i> content',
