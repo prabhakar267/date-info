@@ -76,7 +76,12 @@ function get(port, rawQuery, timeoutMs) {
 export async function startPhp({ vizgrBase = null, tmdbBase = null } = {}) {
   const dir = copyPhp(vizgrBase, tmdbBase);
   const port = await freePort();
-  const proc = spawn(PHP_BIN, ['-S', `127.0.0.1:${port}`, '-t', dir], { stdio: 'ignore' });
+  // No time limits: with php.ini's limits (30 s execution, 60 s input), PHP
+  // 8.6's built-in server on macOS kills the request with a fatal error and an
+  // empty body while PHP waits out a dead vizgr (default_socket_timeout 60 s).
+  // Those limits are hosting settings, not part of the API's behaviour.
+  const phpArgs = ['-d', 'max_execution_time=0', '-d', 'max_input_time=-1', '-S', `127.0.0.1:${port}`, '-t', dir];
+  const proc = spawn(PHP_BIN, phpArgs, { stdio: 'ignore' });
   let exited = false;
   proc.on('exit', () => { exited = true; });
 

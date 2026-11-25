@@ -130,7 +130,7 @@ async function runGrid(grid, php, other, mock) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const nowMs = Date.now();
       if (mock) mock.log.length = 0;
-      phpBody = await php.request(query);
+      phpBody = await php.request(query).catch((e) => Buffer.from(`<PHP request failed: ${e.message}>`));
       phpLog = mock ? normaliseLog(mock.log.splice(0)) : [];
       otherBody = await other(label, query, nowMs);
       otherLog = mock ? normaliseLog(mock.log.splice(0)) : [];
