@@ -1,6 +1,6 @@
 # Parity notes for js/date-info.js
 
-There was no `php` binary on the machine where the port was written, so the PHP 8 behavior below comes from reading php-src (PHP-8.0/8.3 branches) and timelib's `parse_date.re`, not from running PHP. The parity round should confirm the items under "Unverified".
+The port was first written from php-src and timelib's `parse_date.re`, then checked against PHP 8.6.0 (Homebrew) with the harness in `test/parity/`. The latest run matches PHP byte for byte on every grid case (see `test/parity/RESULTS.md`).
 
 ## Edge inputs and what the port returns
 
@@ -25,8 +25,8 @@ There was no `php` binary on the machine where the port was written, so the PHP 
 | `day=31&month=12&year=9999` | 9999-12-31 | `{"success":true,"day_of_week":"Friday","month_string":"December","time":true,"events":[]}` |
 | `day=1&month=1&year=10000` | 2000-01-01 | `{"success":true,"day_of_week":"Saturday","month_string":"January","time":false,"events":[]}` |
 | `day=1&month=1&year=24000` | 2000-01-02 | `{"success":true,"day_of_week":"Saturday","month_string":"January","time":false,"events":[]}` |
-| `day=1&month=1&year=10600` | 1970-01-01 | `{"success":true,"day_of_week":"Wednesday","month_string":"January","time":false,"events":[]}` |
-| `day=31&month=12&year=32767` | 1970-01-01 | `{"success":true,"day_of_week":"Sunday","month_string":"December","time":false,"events":[]}` |
+| `day=1&month=1&year=10600` | 2000-01-01 | `{"success":true,"day_of_week":"Wednesday","month_string":"January","time":false,"events":[]}` |
+| `day=31&month=12&year=32767` | 2007-12-31 | `{"success":true,"day_of_week":"Sunday","month_string":"December","time":false,"events":[]}` |
 | `day=1&month=1&year=32768` | - | `{"success":false,"message":"Invalid Date provided"}` |
 | `day=%205&month=1&year=2015` | 2015-01-05 | `{"success":true,"day_of_week":"Monday","month_string":"January","time":false,"events":[]}` |
 | `day=5abc&month=1&year=2015` | 2015-01-05 | `{"success":true,"day_of_week":"Monday","month_string":"January","time":false,"events":[]}` |
@@ -51,14 +51,17 @@ Upstream-shape cases, covered in `js/date-info.test.mjs`:
 * strtotime("Y-n-j"), from timelib `parse_date.re`:
   * Years 1-69 are read as 2001-2069 and 70-99 as 1970-1999 (TIMELIB_PROCESS_YEAR on the 1-4 digit `year` of `gnudateshort`). So `year=50` queries the upstreams for 2050 and gives `time:true`, while `year=1` queries 2001.
   * 3-4 digit years are kept; date('Y') pads to 4 digits (`0999`).
-  * 5-digit years match no date rule. When the first four digits read as a time (`gnunocolon`: hour 10-24, minute 00-59), they become the time and the last digit plus `-n-j` is the date in 200X (`10000-1-1` is 2000-01-01 10:00, `24000-1-1` is 2000-01-02 00:00, and `10012-2-29` rolls to 2002-03-01). Otherwise the first digit is an "Unexpected character" error, strtotime returns false, the upstreams are queried for 1970-01-01 and `time` is false.
+  * 5-digit years match no date rule. The last digit plus `-n-j` is always read as the date in 200X. When the first four digits read as a time (`gnunocolon`: hour 10-24, minute 00-59), they become the time (`10000-1-1` is 2000-01-01 10:00, `24000-1-1` is 2000-01-02 00:00, `10012-2-29` rolls to 2002-03-01 10:01). Otherwise PHP 8.6 drops them with no error and the time stays midnight (`32767-1-1` is 2007-01-01, `10600-1-1` is 2000-01-01). strtotime never returns false for a date that passed checkdate.
+  * Checked with `php -r` on PHP 8.6.0: every year 1-32767 for 7 day/month pairs, and every day of 450 sampled years (1-130, 990-1010, 1960-2080, 9990-10020, every 53rd year from 10000, and the boundary years). The only differences from the port are two midnights inside Asia/Kolkata clock jumps, where PHP moves the time forward (1906-01-01 00:08, 1941-10-01 01:00). The date is unchanged, and only the date reaches the output.
 * `intval` on a float string saturates at PHP_INT_MAX/MIN and gives 0 for INF (`zend_dval_to_lval_cap`). It cannot change the output, since only 1..32767 passes checkdate.
 * `$_GET` parsing: duplicates keep the last value, `day[]`/`day[x]` make an array (intval 1), a later plain `day=` replaces the array, leading spaces in names are dropped, `.` and ` ` become `_`, a name is cut at `%00`, more than 64 bracket levels drop the variable, and only the first 1000 pairs are read (max_input_vars).
 * The vizgr and TMDB requests run in parallel. PHP runs them one after the other; the output is the same.
 
-## Unverified
+## Not checked against PHP
 
-* The 5-digit-year strtotime results above (the most likely mismatch).
-* max_input_vars: that PHP 8 stops reading the query after 1000 pairs.
+The harness grid does not cover these, so they still rest on reading the source:
+
+* max_input_vars: that PHP stops reading the query after 1000 pairs.
 * XML edge cases: libxml's exact depth limit (port fails above 257 levels), entities declared in a DOCTYPE (the port rejects the document; libxml would expand them), and non-UTF-8 encodings other than ISO-8859-1/ASCII (decoded with TextDecoder).
 * Float-to-string ties: JS rounds an exact tie at the 15th significant digit away from zero, PHP rounds it to even.
+* JSON nesting deeper than 512 levels in a TMDB reply.
