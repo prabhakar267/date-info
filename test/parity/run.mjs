@@ -72,7 +72,21 @@ function buildGrid(nowMs) {
   for (const [d, m, y] of [
     [1, 1, 10600], [1, 1, 20000], [1, 1, 24000], [1, 1, 25000], [29, 2, 10012],
     [31, 12, 23599], [15, 6, 32000], [31, 12, 29999],
+    // First four digits as a time (hour 10-24, minute 00-59) and not.
+    [9, 9, 12345], [10, 10, 12345], [1, 1, 10599], [1, 1, 19999], [31, 12, 24599], [1, 12, 24599],
+    [1, 1, 24600], [5, 7, 30000], [31, 12, 32765], [1, 1, 32767],
+    // 29 Feb of a leap 5-digit year whose 200X year is not leap rolls to 1 Mar.
+    [29, 2, 10016], [29, 2, 10020], [29, 2, 25012], [29, 2, 32764],
   ]) grid.push([`5-digit year ${d}/${m}/${y}`, q(d, m, y)]);
+
+  // 1-2 digit years read as 20xx/19xx, 3-digit years kept.
+  for (const [d, m, y] of [[29, 2, 4], [1, 9, 9], [12, 10, 10], [31, 12, 68], [29, 2, 96], [29, 2, 400], [5, 5, 123]]) {
+    grid.push([`short year ${d}/${m}/${y}`, q(d, m, y)]);
+  }
+  for (const [label, offset] of [['yesterday', -1], ['today', 0], ['tomorrow', 1]]) {
+    const [d, m, y] = istDate(nowMs + offset * DAY);
+    grid.push([`${label} IST as 2-digit year`, q(d, m, y % 100)]);
+  }
 
   // Odd values use dates away from the fixtures so they hit the default reply.
   const oddValues = [
