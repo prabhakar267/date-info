@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Date Info</title>
+<style>
+  body { margin: 0; padding: 8px; font-family: monospace; white-space: pre-wrap; word-break: break-all; }
+</style>
+<script type="module">
+  import { getDateInfo } from './js/date-info.js';
+
+  // location.search without the '?' is what PHP sees as the query string.
+  const body = await getDateInfo(location.search.slice(1));
+  document.body.textContent = body;
+</script>
+</head>
+<body></body>
+</html>
