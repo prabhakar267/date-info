@@ -54,7 +54,6 @@ To publish, enable GitHub Pages for the branch in the repository settings (sourc
 ## Tests
 
 * `node --test js/date-info.test.mjs` runs the unit tests (no network).
-* `node test/parity/run.mjs` compares the JavaScript with the original PHP from `master`, byte for byte, against mock upstreams. It needs PHP 8; see `test/parity/README.md`.
 
 ## Caveats
 
