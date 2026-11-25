@@ -1,4 +1,4 @@
-// date-info: a plain JavaScript port of index.php.
+// date-info: a plain JavaScript port of index.php, the original PHP API (still on the master branch).
 //
 // getDateInfo(query, options) returns the exact response body the PHP API
 // echoes (PHP 8 semantics), so it can run on a static host such as GitHub
