@@ -110,9 +110,10 @@ test('strtotimeYnj follows timelib for short and five-digit years', () => {
   assert.deepEqual(strtotimeYnj(10000, 1, 1), { y: 2000, m: 1, d: 1, h: 10, i: 0 });
   assert.deepEqual(strtotimeYnj(10012, 2, 29), { y: 2002, m: 3, d: 1, h: 10, i: 1 });
   assert.deepEqual(strtotimeYnj(24599, 12, 31), { y: 2010, m: 1, d: 1, h: 0, i: 59 });
-  assert.equal(strtotimeYnj(10600, 1, 1), false);
-  assert.equal(strtotimeYnj(25000, 1, 1), false);
-  assert.equal(strtotimeYnj(32767, 12, 31), false);
+  assert.deepEqual(strtotimeYnj(12345, 6, 7), { y: 2005, m: 6, d: 7, h: 12, i: 34 });
+  assert.deepEqual(strtotimeYnj(10600, 1, 1), { y: 2000, m: 1, d: 1, h: 0, i: 0 });
+  assert.deepEqual(strtotimeYnj(25000, 1, 1), { y: 2000, m: 1, d: 1, h: 0, i: 0 });
+  assert.deepEqual(strtotimeYnj(32767, 12, 31), { y: 2007, m: 12, d: 31, h: 0, i: 0 });
 });
 
 test('parsePhpQuery mimics $_GET for duplicates and [] keys', () => {
@@ -187,7 +188,7 @@ test('edge years and numeric strings', async () => {
   assert.equal(await info('day=1&month=1&year=50'), ok('Saturday', 'January', true, FUTURE)); // strtotime reads 2050
   assert.equal(await info('day=31&month=12&year=9999'), ok('Friday', 'December', true, FUTURE));
   assert.equal(await info('day=1&month=1&year=10000'), ok('Saturday', 'January', false, PAST)); // 2000-01-01 10:00
-  assert.equal(await info('day=31&month=12&year=32767'), ok('Sunday', 'December', false, PAST)); // strtotime false
+  assert.equal(await info('day=31&month=12&year=32767'), ok('Sunday', 'December', false, PAST)); // strtotime reads 2007-12-31
   assert.equal(await info('day=%205&month=5abc&year=1e3'), ok('Monday', 'May', false, PAST));
   assert.equal(await info('day[]=1&month=1&year=2015'), ok('Thursday', 'January', false, PAST));
 });

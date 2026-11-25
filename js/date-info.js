@@ -290,13 +290,18 @@ function istToday(now) {
 }
 
 // What PHP 8's strtotime("Y-n-j") gives for a date that passed checkdate, as
-// local Asia/Kolkata {y, m, d, h, i}, or false. From timelib's parse_date.re:
+// local Asia/Kolkata {y, m, d, h, i}. It is never false for these inputs.
+// From timelib's parse_date.re and PHP 8.6.0:
 // - 1-2 digit years go through TIMELIB_PROCESS_YEAR: 0-69 -> 20xx, 70-99 -> 19xx.
 // - 3-4 digit years are kept.
-// - 5 digit years match no date format. If the first four digits read as a
-//   time (gnunocolon: hour 10-24, minute 00-59) that becomes the time, and the
-//   last digit plus "-n-j" parses as the date with year 200X. Otherwise the
-//   first digit is an "Unexpected character" error and strtotime is false.
+// - 5 digit years match no date format. The last digit plus "-n-j" parses as
+//   the date with year 200X. If the first four digits read as a time
+//   (gnunocolon: hour 10-24, minute 00-59) that becomes the time; otherwise
+//   PHP 8.6 drops them without an error and the time stays midnight.
+// Checked against PHP 8.6.0 for every year 1-32767 (7 day/month pairs) and
+// for every day of 450 sampled years. The only differences are the minutes of
+// two midnights that fall in Asia/Kolkata clock jumps (1906-01-01 00:08 and
+// 1941-10-01 01:00 in PHP); the date, which is all the output uses, matches.
 // timelib also rolls a day past month end (2002-02-29) and hour 24 forward.
 export function strtotimeYnj(year, month, day) {
   let y = year;
@@ -306,9 +311,12 @@ export function strtotimeYnj(year, month, day) {
   else if (y < 100) y += 1900;
   else if (y >= 10000) {
     const s = String(y);
-    h = Number(s.slice(0, 2));
-    i = Number(s.slice(2, 4));
-    if (h > 24 || i > 59) return false;
+    const hour = Number(s.slice(0, 2));
+    const minute = Number(s.slice(2, 4));
+    if (hour <= 24 && minute <= 59) {
+      h = hour;
+      i = minute;
+    }
     y = 2000 + Number(s[4]);
   }
   const t = new Date(0);
@@ -749,12 +757,10 @@ export async function getDateInfo(query, options = {}) {
   const d = Number(date);
   const m = Number(month);
   const y = Number(year);
-  // date('Ymd', strtotime($date_string)); date(..., false) is the epoch,
-  // 1970-01-01 in Asia/Kolkata.
+  // date('Ymd', strtotime($date_string)) and date('Y-m-d', ...).
   const parsed = strtotimeYnj(y, m, d);
-  const stamp = parsed || { y: 1970, m: 1, d: 1, h: 5, i: 30 };
-  const ymd = `${pad(stamp.y, 4)}${pad(stamp.m, 2)}${pad(stamp.d, 2)}`;
-  const ymdDash = `${pad(stamp.y, 4)}-${pad(stamp.m, 2)}-${pad(stamp.d, 2)}`;
+  const ymd = `${pad(parsed.y, 4)}${pad(parsed.m, 2)}${pad(parsed.d, 2)}`;
+  const ymdDash = `${pad(parsed.y, 4)}-${pad(parsed.m, 2)}-${pad(parsed.d, 2)}`;
   const dateDisplay = `${d}-${MONTHS[m]}-${y}`;
   const day = DAY_OF_WEEK[getDay(d, m, y)];
 
@@ -766,11 +772,10 @@ export async function getDateInfo(query, options = {}) {
     timeFlag = true;
   } else {
     // strtotime(date('d-m-Y')) > strtotime($date_string). Midnight today is
-    // compared as local time; a false right side always loses.
+    // compared as local time.
     const todayKey = [today.y, today.m, today.d, 0, 0];
-    const dateKey = parsed && [parsed.y, parsed.m, parsed.d, parsed.h, parsed.i];
-    const todayIsLater = !dateKey || compareKeys(todayKey, dateKey) > 0;
-    timeFlag = !todayIsLater;
+    const dateKey = [parsed.y, parsed.m, parsed.d, parsed.h, parsed.i];
+    timeFlag = !(compareKeys(todayKey, dateKey) > 0);
     // index.php builds "The day on ..." here but never adds it to the events.
   }
 
