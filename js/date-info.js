@@ -3,7 +3,8 @@
 // getDateInfo(query, options) returns the exact response body the PHP API
 // echoes (PHP 8 semantics), so it can run on a static host such as GitHub
 // Pages. No dependencies and no build step: the same file runs in Node 24 and
-// in modern browsers.
+// in modern browsers. The one difference: historical events come from
+// Wikipedia's "On this day" feed instead of vizgr.org, which no longer answers.
 
 export const MONTHS = [
   null, 'January', 'February', 'March', 'April', 'May', 'June',
@@ -350,208 +351,6 @@ function decodeUtf8(bytes) {
 }
 
 // ---------------------------------------------------------------------------
-// XML (enough of libxml2 for simplexml_load_file on the vizgr feed)
-// ---------------------------------------------------------------------------
-
-// Decode XML bytes the way libxml picks an encoding: BOM, then the
-// declaration's encoding, else UTF-8. Throws on bytes invalid in it.
-function decodeXmlBytes(bytes) {
-  if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) return decodeUtf8(bytes.subarray(3));
-  if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(2));
-  if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(2));
-  const head = String.fromCharCode(...bytes.subarray(0, 200));
-  const declared = /^<\?xml[^>]*?\sencoding\s*=\s*["']([A-Za-z][A-Za-z0-9._-]*)["']/.exec(head);
-  const encoding = declared ? declared[1].toLowerCase() : 'utf-8';
-  if (encoding === 'us-ascii' || encoding === 'ascii') {
-    if (bytes.some((b) => b > 0x7F)) throw new Error('not ASCII');
-  } else if (!/^(iso[-_]?8859[-_]1|latin-?1|l1)$/.test(encoding)) {
-    return new TextDecoder(encoding, { fatal: true, ignoreBOM: true }).decode(bytes); // throws on unknown labels
-  }
-  // ASCII or true Latin-1 (TextDecoder would use windows-1252 for that label).
-  return Array.from(bytes, (b) => String.fromCharCode(b)).join('');
-}
-
-const XML_NAME_START = ':A-Z_a-z\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u02FF\\u0370-\\u037D\\u037F-\\u1FFF\\u200C\\u200D'
-  + '\\u2070-\\u218F\\u2C00-\\u2FEF\\u3001-\\uD7FF\\uF900-\\uFDCF\\uFDF0-\\uFFFD\\u{10000}-\\u{EFFFF}';
-const XML_NAME = new RegExp(`[${XML_NAME_START}][${XML_NAME_START}\\-.0-9\\u00B7\\u0300-\\u036F\\u203F\\u2040]*`, 'uy');
-const XML_INVALID_CHAR = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u;
-const XML_PREDEFINED = { lt: '<', gt: '>', amp: '&', apos: "'", quot: '"' };
-const XML_MAX_DEPTH = 257; // libxml2 refuses deeper nesting without XML_PARSE_HUGE
-const XML_FAIL = new Error('not well-formed');
-
-// Parse an XML document into its root element, or null when libxml would
-// reject it. An element is {name, children}; a child is an element or a
-// string (text and CDATA, references decoded).
-// shortcut: entities declared in a DOCTYPE are not expanded (the document is
-// rejected instead), and namespace prefixes are not checked; vizgr uses neither.
-export function parseXml(bytesOrText) {
-  let s;
-  try {
-    s = typeof bytesOrText === 'string' ? bytesOrText : decodeXmlBytes(bytesOrText);
-  } catch {
-    return null;
-  }
-  s = s.replace(/\r\n?/g, '\n'); // XML end-of-line handling
-  if (XML_INVALID_CHAR.test(s)) return null;
-  let i = 0;
-
-  const skipSpace = () => {
-    const start = i;
-    while (s[i] === ' ' || s[i] === '\t' || s[i] === '\n') i++;
-    return i > start;
-  };
-  const readName = () => {
-    XML_NAME.lastIndex = i;
-    const m = XML_NAME.exec(s);
-    if (!m) throw XML_FAIL;
-    i += m[0].length;
-    return m[0];
-  };
-  const readUntil = (end) => {
-    const j = s.indexOf(end, i);
-    if (j < 0) throw XML_FAIL;
-    const body = s.slice(i, j);
-    i = j + end.length;
-    return body;
-  };
-  const decodeRefs = (raw) => raw.replace(/&(#[0-9]+|#x[0-9A-Fa-f]+|[^;&]*)(;?)/g, (all, ref, semi) => {
-    if (!semi) throw XML_FAIL;
-    if (ref[0] === '#') {
-      const code = ref[1] === 'x' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
-      const ch = code <= 0x10FFFF ? String.fromCodePoint(code) : '';
-      if (!ch || XML_INVALID_CHAR.test(ch)) throw XML_FAIL;
-      return ch;
-    }
-    if (!Object.hasOwn(XML_PREDEFINED, ref)) throw XML_FAIL;
-    return XML_PREDEFINED[ref];
-  });
-  const skipDoctype = () => {
-    let inSubset = false;
-    for (i += '<!DOCTYPE'.length; i < s.length; i++) {
-      const c = s[i];
-      if (c === '"' || c === "'") {
-        i = s.indexOf(c, i + 1);
-        if (i < 0) throw XML_FAIL;
-      } else if (c === '[') {
-        inSubset = true;
-      } else if (c === ']') {
-        inSubset = false;
-      } else if (c === '>' && !inSubset) {
-        i++;
-        return;
-      }
-    }
-    throw XML_FAIL;
-  };
-
-  try {
-    if (/^<\?xml[ \t\n]/.test(s)) {
-      i = 5;
-      readUntil('?>');
-    }
-    let root = null;
-    let sawDoctype = false;
-    const stack = [];
-    while (i < s.length) {
-      const parent = stack[stack.length - 1];
-      if (!parent && skipSpace()) continue;
-      if (s.startsWith('<!--', i)) {
-        i += 4;
-        const body = readUntil('-->');
-        if (body.includes('--') || body.endsWith('-')) throw XML_FAIL;
-        continue;
-      }
-      if (s.startsWith('<?', i)) {
-        i += 2;
-        if (readName().toLowerCase() === 'xml') throw XML_FAIL; // declaration not at the start
-        readUntil('?>');
-        continue;
-      }
-      if (!parent) {
-        if (s.startsWith('<!DOCTYPE', i) && !root && !sawDoctype) {
-          sawDoctype = true;
-          skipDoctype();
-          continue;
-        }
-        if (root || s[i] !== '<') throw XML_FAIL; // only one root, no text outside it
-      } else if (s.startsWith('<![CDATA[', i)) {
-        i += 9;
-        parent.children.push(readUntil(']]>'));
-        continue;
-      } else if (s.startsWith('</', i)) {
-        i += 2;
-        const name = readName();
-        skipSpace();
-        if (s[i] !== '>' || name !== parent.name) throw XML_FAIL;
-        i++;
-        stack.pop();
-        continue;
-      } else if (s[i] !== '<') {
-        const j = s.indexOf('<', i);
-        if (j < 0) throw XML_FAIL;
-        const raw = s.slice(i, j);
-        if (raw.includes(']]>')) throw XML_FAIL;
-        parent.children.push(decodeRefs(raw));
-        i = j;
-        continue;
-      }
-
-      // A start tag.
-      i++;
-      const el = { name: readName(), children: [] };
-      const attributes = new Set();
-      let selfClosing = false;
-      for (;;) {
-        const spaced = skipSpace();
-        if (s.startsWith('/>', i)) {
-          i += 2;
-          selfClosing = true;
-          break;
-        }
-        if (s[i] === '>') {
-          i++;
-          break;
-        }
-        if (!spaced) throw XML_FAIL;
-        const attr = readName();
-        if (attributes.has(attr)) throw XML_FAIL;
-        attributes.add(attr);
-        skipSpace();
-        if (s[i] !== '=') throw XML_FAIL;
-        i++;
-        skipSpace();
-        const quote = s[i];
-        if (quote !== '"' && quote !== "'") throw XML_FAIL;
-        i++;
-        const value = readUntil(quote);
-        if (value.includes('<')) throw XML_FAIL;
-        decodeRefs(value);
-      }
-      if (parent) parent.children.push(el);
-      else root = el;
-      if (!selfClosing) {
-        stack.push(el);
-        if (stack.length > XML_MAX_DEPTH) throw XML_FAIL;
-      }
-    }
-    return root && stack.length === 0 ? root : null;
-  } catch (e) {
-    if (e === XML_FAIL) return null;
-    throw e;
-  }
-}
-
-// SimpleXML's $el->name: child elements with that name and no prefix.
-function childElements(el, name) {
-  return el.children.filter((c) => typeof c === 'object' && c.name === name);
-}
-
-// SimpleXML's (string) cast: the element's own text and CDATA children only.
-function ownText(el) {
-  return el.children.filter((c) => typeof c === 'string').join('');
-}
-
-// ---------------------------------------------------------------------------
 // JSON (PHP 8 json_decode without flags)
 // ---------------------------------------------------------------------------
 
@@ -684,19 +483,26 @@ export function parsePhpJson(text) {
 // Upstream events
 // ---------------------------------------------------------------------------
 
-// getVizgrEvents() from index.php. Any failure adds nothing.
-async function getVizgrEvents(ymd, vizgrBase, fetchFn) {
-  const url = `${vizgrBase}/historical-events/search.php?begin_date=${ymd}&end_date=${ymd}&lang=en`;
-  const bytes = await fetchBytes(fetchFn, url);
-  const xml = bytes && parseXml(bytes);
-  if (!xml) return [];
-  const count = childElements(xml, 'count')[0];
-  if (!count || phpIntval(ownText(count)) <= 0n) return [];
-  return childElements(xml, 'event').map((event) => {
-    const description = childElements(event, 'description')[0];
-    const text = description ? ownText(description) : '';
-    return phpTrim(text.split('{')[0].split('<')[0]);
-  });
+// Historical events from Wikipedia's "On this day" feed. index.php used
+// vizgr.org, which no longer answers. The feed lists every year for a day and
+// month, so only events from the exact year are kept, in the feed's order.
+// Any failure adds nothing. No custom headers, so the browser sends a simple
+// CORS request.
+async function getWikipediaEvents(year, month, day, wikiBase, fetchFn) {
+  const url = `${wikiBase}/feed/v1/wikipedia/en/onthisday/events/${pad(month, 2)}/${pad(day, 2)}`;
+  try {
+    const res = await fetchFn(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (res.status !== 200) return [];
+    const { events } = await res.json();
+    if (!Array.isArray(events)) return [];
+    return events
+      // A text json_encode cannot encode (a lone surrogate) would empty the
+      // whole body, so it is dropped.
+      .filter((e) => e && e.year === year && typeof e.text === 'string' && phpJsonEncode(e.text) !== false)
+      .map((e) => phpTrim(e.text));
+  } catch {
+    return [];
+  }
 }
 
 // getMovieDBEvents() from index.php. Any failure adds nothing; a title or
@@ -737,7 +543,7 @@ async function getMovieDBEvents(date, timeFlag, tmdbBase, fetchFn) {
 // Returns the exact body index.php echoes for `query`.
 export async function getDateInfo(query, options = {}) {
   const {
-    vizgrBase = 'http://www.vizgr.org',
+    wikiBase = 'https://api.wikimedia.org',
     tmdbBase = 'https://api.themoviedb.org',
     now = new Date(),
     fetch: fetchFn = globalThis.fetch,
@@ -757,9 +563,9 @@ export async function getDateInfo(query, options = {}) {
   const d = Number(date);
   const m = Number(month);
   const y = Number(year);
-  // date('Ymd', strtotime($date_string)) and date('Y-m-d', ...).
+  // date('Y-m-d', strtotime($date_string)). Wikipedia events use the same
+  // date, as vizgr did with date('Ymd', ...).
   const parsed = strtotimeYnj(y, m, d);
-  const ymd = `${pad(parsed.y, 4)}${pad(parsed.m, 2)}${pad(parsed.d, 2)}`;
   const ymdDash = `${pad(parsed.y, 4)}-${pad(parsed.m, 2)}-${pad(parsed.d, 2)}`;
   const dateDisplay = `${d}-${MONTHS[m]}-${y}`;
   const day = DAY_OF_WEEK[getDay(d, m, y)];
@@ -779,18 +585,18 @@ export async function getDateInfo(query, options = {}) {
     // index.php builds "The day on ..." here but never adds it to the events.
   }
 
-  let vizgrEvents;
+  let wikiEvents;
   let tmdbEvents;
   try {
-    [vizgrEvents, tmdbEvents] = await Promise.all([
-      getVizgrEvents(ymd, vizgrBase, fetchFn),
+    [wikiEvents, tmdbEvents] = await Promise.all([
+      getWikipediaEvents(parsed.y, parsed.m, parsed.d, wikiBase, fetchFn),
       getMovieDBEvents(ymdDash, timeFlag, tmdbBase, fetchFn),
     ]);
   } catch (e) {
     if (e instanceof PhpFatalError) return '';
     throw e;
   }
-  events.push(...vizgrEvents, ...tmdbEvents);
+  events.push(...wikiEvents, ...tmdbEvents);
 
   const body = phpJsonEncode({
     success: true,
