@@ -34,3 +34,26 @@ Response
 ![unsuccessful response](/.github/screenshots/screencapture-localhost-date-info-date-info-php-1445447730540.png) 
 
 * * * *
+
+* * * *
+
+## Hosting on GitHub Pages
+
+The API also runs as plain JavaScript, so it can be served by GitHub Pages with no PHP server.
+
+* `index.html` is the page. It reads the query string, calls `getDateInfo` and shows only the JSON text.
+* `js/date-info.js` is a dependency-free ES module with the same logic as `index.php`. It also works in Node 24: `getDateInfo(new URLSearchParams('day=21&month=10&year=2015'))` resolves to the same body the PHP API echoes.
+* `.nojekyll` tells GitHub Pages to serve the files as they are.
+
+To publish, enable GitHub Pages for the branch in the repository settings (source: the repository root). Then call it the same way as the PHP API:
+
+```
+https://<user>.github.io/date-info/?day=21&month=10&year=2015
+```
+
+Run the unit tests with `node --test js/date-info.test.mjs`.
+
+Caveats:
+
+* GitHub Pages only serves static files, so the response is an HTML page whose visible text is the JSON. The JSON text is identical to the PHP API's, but the HTTP `Content-Type` is `text/html`, not `application/json`.
+* The vizgr historical-events service is http-only and currently times out. A page served over https cannot call it, so in the browser it adds no events. That matches what the PHP API returns today, since its vizgr request times out too.
