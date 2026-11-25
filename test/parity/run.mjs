@@ -68,6 +68,12 @@ function buildGrid(nowMs) {
     grid.push([`year ${y} Dec 31`, q(31, 12, y)]);
   }
 
+  // 5-digit years pass checkdate up to 32767; strtotime reads them oddly.
+  for (const [d, m, y] of [
+    [1, 1, 10600], [1, 1, 20000], [1, 1, 24000], [1, 1, 25000], [29, 2, 10012],
+    [31, 12, 23599], [15, 6, 32000], [31, 12, 29999],
+  ]) grid.push([`5-digit year ${d}/${m}/${y}`, q(d, m, y)]);
+
   // Odd values use dates away from the fixtures so they hit the default reply.
   const oddValues = [
     ['" 5"', '%205'], ['"5abc"', '5abc'], ['"+5"', '%2B5'], ['raw + (decodes to " 5")', '+5'],
