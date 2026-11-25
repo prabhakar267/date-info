@@ -1,6 +1,14 @@
 # Date Info
 
-This is a simple API which let's the user fetch the events in JSON format which happened or would happen on a specific date. API takes 3 parameters as day in date, month and year format.
+This is a simple API which lets the user fetch, in JSON format, the events which happened or would happen on a specific date. The API takes 3 parameters: day, month and year.
+
+It runs entirely in JavaScript and is served as a static site on GitHub Pages:
+
+```
+https://<user>.github.io/date-info/?day=21&month=10&year=2015
+```
+
+Events come from the [vizgr historical events service](http://www.vizgr.org/historical-events/) and from movies released on that date on [TMDB](https://www.themoviedb.org/). Dates are judged in Asia/Kolkata time. The original PHP version of the API is kept on the `master` branch; this version returns the same JSON for the same query.
 
 | Parameter | Value |
 |---|---|
@@ -35,25 +43,20 @@ Response
 
 * * * *
 
-* * * *
-
-## Hosting on GitHub Pages
-
-The API also runs as plain JavaScript, so it can be served by GitHub Pages with no PHP server.
+## How it works
 
 * `index.html` is the page. It reads the query string, calls `getDateInfo` and shows only the JSON text.
-* `js/date-info.js` is a dependency-free ES module with the same logic as `index.php`. It also works in Node 24: `getDateInfo(new URLSearchParams('day=21&month=10&year=2015'))` resolves to the same body the PHP API echoes.
+* `js/date-info.js` is a dependency-free ES module that builds the response. It also works in Node 24: `getDateInfo(new URLSearchParams('day=21&month=10&year=2015'))` resolves to the JSON text.
 * `.nojekyll` tells GitHub Pages to serve the files as they are.
 
-To publish, enable GitHub Pages for the branch in the repository settings (source: the repository root). Then call it the same way as the PHP API:
+To publish, enable GitHub Pages for the branch in the repository settings (source: the repository root).
 
-```
-https://<user>.github.io/date-info/?day=21&month=10&year=2015
-```
+## Tests
 
-Run the unit tests with `node --test js/date-info.test.mjs`.
+* `node --test js/date-info.test.mjs` runs the unit tests (no network).
+* `node test/parity/run.mjs` compares the JavaScript with the original PHP from `master`, byte for byte, against mock upstreams. It needs PHP 8; see `test/parity/README.md`.
 
-Caveats:
+## Caveats
 
 * GitHub Pages only serves static files, so the response is an HTML page whose visible text is the JSON. The JSON text is identical to the PHP API's, but the HTTP `Content-Type` is `text/html`, not `application/json`.
 * The vizgr historical-events service is http-only and currently times out. A page served over https cannot call it, so in the browser it adds no events. That matches what the PHP API returns today, since its vizgr request times out too.
